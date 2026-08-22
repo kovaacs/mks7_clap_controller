@@ -1,5 +1,9 @@
 # MKS-7 CLAP Controller
 
+[![CI](https://github.com/kovaacs/mks7_clap_controller/actions/workflows/ci.yml/badge.svg)](https://github.com/kovaacs/mks7_clap_controller/actions/workflows/ci.yml)
+[![Release](https://img.shields.io/github/v/release/kovaacs/mks7_clap_controller)](https://github.com/kovaacs/mks7_clap_controller/releases/latest)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+
 An Apple Silicon macOS CLAP plug-in bundle for editing the Roland MKS-7 from compatible CLAP hosts.
 It exposes the MKS-7's synthesis parameters as automatable, modulatable controls and saves their
 state with the host project. Bitwig Studio is the currently documented and tested host.
@@ -28,7 +32,8 @@ MIDI destination hot-plug refresh are not implemented.
 
 ## Build
 
-Rust 1.98 or newer is required.
+Development and CI use Rust 1.98.0, pinned in `rust-toolchain.toml`. Rustup automatically installs
+the required formatting and linting components and Apple Silicon target.
 
 ```sh
 cargo test --workspace
@@ -36,12 +41,7 @@ cargo run -p xtask --release
 ```
 
 The Apple Silicon bundle is written to `target/clap/MKS-7 Controller.clap`, targets macOS 11.0
-or newer, and is ad-hoc signed. Use `cargo run -p xtask -- --debug` for a debug build. The Apple
-Silicon Rust target must be installed:
-
-```sh
-rustup target add aarch64-apple-darwin
-```
+or newer, and is ad-hoc signed. Use `cargo run -p xtask -- --debug` for a debug build.
 
 Only macOS is supported because the MIDI transport uses CoreMIDI. Other targets are rejected at
 compile time until they have a verified transport and packaging path.
@@ -98,6 +98,11 @@ events rather than interrupting real-time processing.
 See [`docs/MKS-7_DEVELOPER_REFERENCE.md`](docs/MKS-7_DEVELOPER_REFERENCE.md) for the implemented MIDI
 protocol and hardware-verified encodings.
 
+## Contributing
+
+Contributions are welcome. See [`CONTRIBUTING.md`](CONTRIBUTING.md) for setup, required checks, and
+hardware-validation expectations.
+
 ## Disclaimer
 
 This is an independent, unofficial project and is not affiliated with or endorsed by Roland or
@@ -105,4 +110,5 @@ Bitwig. Roland, MKS-7, Bitwig, and Bitwig Studio are trademarks of their respect
 
 ## License
 
-This project is available under the [MIT License](LICENSE).
+This project is available under the [MIT License](LICENSE). Dependency license texts are listed in
+[`THIRD_PARTY_LICENSES.html`](THIRD_PARTY_LICENSES.html).

@@ -1,0 +1,79 @@
+name: Bug report
+description: Report a reproducible plug-in, MIDI, build, or compatibility problem
+title: "[Bug]: "
+body:
+  - type: dropdown
+    id: area
+    attributes:
+      label: Affected area
+      options:
+        - Melody Controller
+        - Chord Controller
+        - Bass Controller
+        - Installation or plug-in discovery
+        - Build or packaging
+        - Other
+    validations:
+      required: true
+
+  - type: input
+    id: version
+    attributes:
+      label: Plug-in version
+      description: Release tag, commit SHA, or branch name.
+      placeholder: v0.6.1
+    validations:
+      required: true
+
+  - type: input
+    id: environment
+    attributes:
+      label: Environment
+      description: Include the macOS version, host and version, and relevant MIDI interface or output.
+      placeholder: macOS 15.6, Bitwig Studio 5.3, interface name
+    validations:
+      required: true
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem
+      description: What happened, and how often does it happen?
+    validations:
+      required: true
+
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Steps to reproduce
+      description: Include the smallest reliable sequence from loading the plug-in.
+      placeholder: |
+        1. Add the Melody Controller
+        2. Select the MIDI output
+        3. Change VCF Cutoff
+        4. Observe ...
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+    validations:
+      required: true
+
+  - type: textarea
+    id: evidence
+    attributes:
+      label: Logs or hardware evidence
+      description: Add host logs, MIDI captures, CI links, or hardware observations that help reproduce the problem.
+
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Checklist
+      options:
+        - label: I searched existing issues for this problem.
+          required: true
+        - label: I confirmed the MIDI output and receive channel match, or the issue does not involve MIDI transmission.
+          required: true
