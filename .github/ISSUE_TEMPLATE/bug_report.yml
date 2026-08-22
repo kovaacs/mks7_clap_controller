@@ -21,7 +21,7 @@ body:
     attributes:
       label: Plug-in version
       description: Release tag, commit SHA, or branch name.
-      placeholder: v0.6.1
+      placeholder: v0.1.0
     validations:
       required: true
 
