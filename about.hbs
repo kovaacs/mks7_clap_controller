@@ -1,0 +1,28 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>MKS-7 Controller Third-Party Licenses</title>
+    <style>
+        body { font-family: sans-serif; line-height: 1.5; margin: 2rem auto; max-width: 60rem; padding: 0 1rem; }
+        pre { overflow-x: auto; white-space: pre-wrap; }
+    </style>
+</head>
+<body>
+    <h1>Third-Party Licenses</h1>
+    <p>This file lists the licenses of third-party software used by MKS-7 Controller.</p>
+    {{#each licenses}}
+    <section>
+        <h2>{{name}}</h2>
+        <p>Used by:</p>
+        <ul>
+            {{#each used_by}}
+            <li>{{crate.name}} {{crate.version}}</li>
+            {{/each}}
+        </ul>
+        <pre>{{text}}</pre>
+    </section>
+    {{/each}}
+</body>
+</html>

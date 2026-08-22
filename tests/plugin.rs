@@ -8,28 +8,28 @@ use mks7_clap_controller::Mks7Entry;
 
 #[test]
 fn descriptors_parameters_ports_and_remote_pages_are_stable() {
-    let info = HostInfo::new("MKS-7 CLAP Controller test", "", "", "1.0").unwrap();
+    let info = HostInfo::new("MKS-7 Controller test", "", "", "1.0").unwrap();
     let entry = PluginEntry::load_from_clack::<Mks7Entry>(c"").unwrap();
     let factory = entry.get_factory::<PluginFactory>().unwrap();
     assert_eq!(factory.plugin_count(), 3);
 
     let expected = [
         (
-            b"com.marcellkovacs.mks7-clap-controller-melody".as_slice(),
+            b"com.marcellkovacs.mks7-controller-melody".as_slice(),
             b"MKS-7 Melody Controller".as_slice(),
             28,
             1.0,
             6,
         ),
         (
-            b"com.marcellkovacs.mks7-clap-controller-chord".as_slice(),
+            b"com.marcellkovacs.mks7-controller-chord".as_slice(),
             b"MKS-7 Chord Controller".as_slice(),
             28,
             3.0,
             6,
         ),
         (
-            b"com.marcellkovacs.mks7-clap-controller-bass".as_slice(),
+            b"com.marcellkovacs.mks7-controller-bass".as_slice(),
             b"MKS-7 Bass Controller".as_slice(),
             13,
             2.0,
@@ -44,7 +44,10 @@ fn descriptors_parameters_ports_and_remote_pages_are_stable() {
         assert_eq!(descriptor.id().unwrap().to_bytes(), id);
         assert_eq!(descriptor.name().unwrap().to_bytes(), name);
         assert_eq!(descriptor.vendor().unwrap().to_bytes(), b"Marcell Kovacs");
-        assert_eq!(descriptor.version().unwrap().to_bytes(), b"0.6.1");
+        assert_eq!(
+            descriptor.version().unwrap().to_bytes(),
+            env!("CARGO_PKG_VERSION").as_bytes()
+        );
 
         let mut plugin = PluginInstance::<TestHost>::new(
             |_| TestShared,
@@ -217,7 +220,7 @@ fn descriptors_parameters_ports_and_remote_pages_are_stable() {
         let mut note_buffer = NotePortInfoBuffer::new();
         let note = note_ports.get(&handle, 0, true, &mut note_buffer).unwrap();
         assert_eq!(note.id, 0);
-        assert_eq!(note.name, b"MKS-7 CLAP Controller MIDI");
+        assert_eq!(note.name, b"MKS-7 Controller MIDI");
         assert_eq!(
             note.supported_dialects,
             NoteDialects::CLAP | NoteDialects::MIDI | NoteDialects::MIDI_MPE | NoteDialects::MIDI2

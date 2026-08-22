@@ -2,10 +2,19 @@
 resolver = "2"
 members = ["xtask"]
 
+[workspace.package]
+version = "0.6.1"
+
 [package]
 name = "mks7_clap_controller"
-version = "0.6.1"
+version.workspace = true
 edition = "2024"
+rust-version = "1.98"
+authors = ["Marcell Kovács"]
+description = "Apple Silicon CLAP controller plug-in for the Roland MKS-7"
+repository = "https://github.com/kovaacs/mks7_clap_controller"
+readme = "README.md"
+license = "MIT"
 publish = false
 
 [lib]
@@ -16,7 +25,7 @@ clack-plugin = { git = "https://github.com/prokopyl/clack.git", rev = "c5975f9f8
 clack-extensions = { git = "https://github.com/prokopyl/clack.git", rev = "c5975f9f89f0953b00768680357985d46178078a", version = "0.2.0", features = ["clack-plugin", "note-ports", "params", "remote-controls", "state"] }
 
 [target.'cfg(target_os = "macos")'.dependencies]
-coremidi = "0.8.0"
+coremidi = "0.9.2"
 
 [dev-dependencies]
 clack-host = { git = "https://github.com/prokopyl/clack.git", rev = "c5975f9f89f0953b00768680357985d46178078a", version = "0.2.0", features = ["clack-plugin"] }

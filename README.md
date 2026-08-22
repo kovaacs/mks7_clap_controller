@@ -1,8 +1,11 @@
-# MKS-7 CLAP Controller
+# MKS-7 Controller
 
-A macOS CLAP plug-in bundle for editing the Roland MKS-7 from compatible CLAP hosts. It exposes the
-MKS-7's synthesis parameters as automatable, modulatable controls and saves their state with the
-host project. Bitwig Studio is the currently documented and tested host.
+An Apple Silicon macOS CLAP plug-in bundle for editing the Roland MKS-7 from compatible CLAP hosts.
+It exposes the MKS-7's synthesis parameters as automatable, modulatable controls and saves their
+state with the host project. Bitwig Studio is the currently documented and tested host.
+
+This is an independent, unofficial project and is not affiliated with or endorsed by Roland or
+Bitwig. Roland, MKS-7, Bitwig, and Bitwig Studio are trademarks of their respective owners.
 
 The bundle provides three note effects:
 
@@ -20,7 +23,7 @@ instruments: use Bitwig's HW Instrument after each controller for notes and audi
 - Configurable MIDI output and receive channel for each part
 - Automation, modulation, remote-control pages, and project state restoration
 - Rate-limited and coalesced MIDI output
-- Note and MIDI event pass-through to the following device
+- Best-effort note and MIDI event pass-through to the following device
 
 There is no custom interface; Bitwig's parameter and remote-control panels are the front panel.
 Rhythm mapping, program changes, hardware state reading, bulk tone writes, preset management, and
@@ -28,28 +31,50 @@ MIDI destination hot-plug refresh are not implemented.
 
 ## Build
 
-Rust 1.85 or newer is required.
+Rust 1.98 or newer is required.
 
 ```sh
 cargo test --workspace
 cargo run -p xtask --release
 ```
 
-The bundle is written to `target/clap/MKS-7 CLAP Controller.clap` and ad-hoc signed. Use
-`cargo run -p xtask -- --debug` for a debug build.
+The Apple Silicon bundle is written to `target/clap/MKS-7 Controller.clap`, targets macOS 11.0
+or newer, and is ad-hoc signed. Use `cargo run -p xtask -- --debug` for a debug build. The Apple
+Silicon Rust target must be installed:
+
+```sh
+rustup target add aarch64-apple-darwin
+```
 
 Only macOS is supported because the MIDI transport uses CoreMIDI. Other targets are rejected at
 compile time until they have a verified transport and packaging path.
 
 ## Install
 
-Place or symlink `MKS-7 CLAP Controller.clap` in:
+Download the Apple Silicon macOS archive and checksum from
+[GitHub Releases](https://github.com/kovaacs/mks7_clap_controller/releases), then verify it:
+
+```sh
+shasum -a 256 -c MKS-7-Controller-*-macOS-Apple-Silicon.zip.sha256
+```
+
+Place or symlink `MKS-7 Controller.clap` in:
 
 ```text
 ~/Library/Audio/Plug-Ins/CLAP/
 ```
 
 Then rescan plug-ins in Bitwig.
+
+The bundle is ad-hoc signed, not Developer ID signed or notarized. macOS may quarantine a downloaded
+copy. Verify the bundle before removing quarantine:
+
+```sh
+codesign --verify --deep --strict --verbose=2 "MKS-7 Controller.clap"
+xattr -d com.apple.quarantine "MKS-7 Controller.clap"
+```
+
+Only remove quarantine from a bundle you built yourself or downloaded from a release you trust.
 
 ## Use In Bitwig
 
@@ -69,5 +94,13 @@ renaming a destination. Saved destinations are restored by CoreMIDI unique ID an
 Each instance sends at most one successful message about every 25 ms. Melody, Chord, and Bass have
 independent senders, so using all three can exceed 40 messages per second in total.
 
+Note and MIDI events are forwarded unchanged when the host accepts them. CLAP does not provide a
+retry path when the host's output event queue is full, so queue exhaustion can drop pass-through
+events rather than interrupting real-time processing.
+
 See [`docs/MKS-7_DEVELOPER_REFERENCE.md`](docs/MKS-7_DEVELOPER_REFERENCE.md) for the implemented MIDI
 protocol and hardware-verified encodings.
+
+## License
+
+This project is available under the [MIT License](LICENSE).

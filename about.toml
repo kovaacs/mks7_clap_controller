@@ -1,0 +1,9 @@
+accepted = [
+    "Apache-2.0",
+    "MIT",
+]
+targets = [
+    "aarch64-apple-darwin",
+]
+ignore-dev-dependencies = true
+private = { ignore = true }

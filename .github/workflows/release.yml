@@ -1,0 +1,49 @@
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+env:
+  CARGO_TERM_COLOR: always
+  MACOSX_DEPLOYMENT_TARGET: "11.0"
+
+jobs:
+  release:
+    name: Release
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@1.98.0
+        with:
+          targets: aarch64-apple-darwin
+      - uses: Swatinem/rust-cache@v2
+      - name: Verify tag version
+        run: |
+          package_version="$(cargo metadata --no-deps --format-version 1 | jq -r '.packages[] | select(.name == "mks7_clap_controller") | .version')"
+          test "$GITHUB_REF_NAME" = "v$package_version"
+      - name: Generate third-party licenses
+        run: |
+          cargo install --locked --version 0.9.2 --features cli cargo-about
+          cargo about generate --locked -o THIRD_PARTY_LICENSES.html about.hbs
+      - name: Install CLAP validator
+        run: cargo install --locked --git https://github.com/free-audio/clap-validator.git --rev b2f1d9b79b1d264a5747f46707d72b1aa40a02ef clap-validator
+      - name: Build Apple Silicon bundle
+        run: cargo run --locked -p xtask --release
+      - name: Validate bundle
+        run: bash scripts/validate-bundle.sh
+      - name: Create release archive
+        env:
+          ARCHIVE: MKS-7-Controller-${{ github.ref_name }}-macOS-Apple-Silicon.zip
+        run: |
+          mkdir -p target/release-assets
+          ditto --norsrc -c -k target/clap "target/release-assets/$ARCHIVE"
+          checksum="$(shasum -a 256 "target/release-assets/$ARCHIVE")"
+          printf '%s  %s\n' "${checksum%% *}" "$ARCHIVE" > "target/release-assets/$ARCHIVE.sha256"
+      - name: Publish GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release create "$GITHUB_REF_NAME" target/release-assets/* --verify-tag --generate-notes --title "$GITHUB_REF_NAME"

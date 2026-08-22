@@ -63,16 +63,18 @@ impl Mks7Shared {
             let mut next_parameter = 0;
             while thread_running.load(Ordering::Relaxed) {
                 let output = thread_state.output_index();
-                if output > 0 && output < thread_midi.count() && thread_state.has_dirty() {
-                    if let Some(message) = thread_state.take_next_message(&mut next_parameter) {
-                        if thread_midi.send(output, &message.bytes) {
-                            thread::sleep(Duration::from_millis(25));
-                        } else {
-                            thread_state.retry(message.kind);
-                            thread::sleep(Duration::from_millis(5));
-                        }
-                        continue;
+                if output > 0
+                    && output < thread_midi.count()
+                    && thread_state.has_dirty()
+                    && let Some(message) = thread_state.take_next_message(&mut next_parameter)
+                {
+                    if thread_midi.send(output, &message.bytes) {
+                        thread::sleep(Duration::from_millis(25));
+                    } else {
+                        thread_state.retry(message.kind);
+                        thread::sleep(Duration::from_millis(5));
                     }
+                    continue;
                 }
                 thread::sleep(Duration::from_millis(5));
             }
@@ -486,7 +488,7 @@ impl PluginStateImpl for Mks7MainThread<'_> {
             .state
             .serialized_size(header[4])
             .ok_or(PluginError::Message(
-                "Invalid MKS-7 CLAP Controller state version",
+                "Invalid MKS-7 Controller state version",
             ))?;
         let mut data = vec![0; size];
         data[..5].copy_from_slice(&header);
@@ -494,7 +496,7 @@ impl PluginStateImpl for Mks7MainThread<'_> {
         self.shared
             .state
             .load(&data, &self.shared.midi.unique_ids())
-            .map_err(|_| PluginError::Message("Invalid MKS-7 CLAP Controller state"))?;
+            .map_err(|_| PluginError::Message("Invalid MKS-7 Controller state"))?;
         if let Some(params) = &self.host_params {
             params.rescan(&self.host, ParamRescanFlags::VALUES);
         }
@@ -510,7 +512,7 @@ impl PluginNotePortsImpl for Mks7MainThread<'_> {
         if index == 0 {
             writer.set(&NotePortInfo {
                 id: ClapId::new(0),
-                name: b"MKS-7 CLAP Controller MIDI",
+                name: b"MKS-7 Controller MIDI",
                 supported_dialects: NoteDialects::CLAP
                     | NoteDialects::MIDI
                     | NoteDialects::MIDI_MPE
@@ -609,14 +611,11 @@ impl Mks7Factory {
     fn new() -> Self {
         use clack_plugin::plugin::features::{NOTE_EFFECT, UTILITY};
         let descriptor = |part: &str, name: &str| {
-            PluginDescriptor::new(
-                &format!("com.marcellkovacs.mks7-clap-controller-{part}"),
-                name,
-            )
-            .with_vendor("Marcell Kovacs")
-            .with_version("0.6.1")
-            .with_description(&format!("Roland {name} controller and SysEx note effect"))
-            .with_features([NOTE_EFFECT, UTILITY])
+            PluginDescriptor::new(&format!("com.marcellkovacs.mks7-controller-{part}"), name)
+                .with_vendor("Marcell Kovacs")
+                .with_version(env!("CARGO_PKG_VERSION"))
+                .with_description(&format!("Roland {name} controller and SysEx note effect"))
+                .with_features([NOTE_EFFECT, UTILITY])
         };
         Self {
             descriptors: [

@@ -1,4 +1,5 @@
 use coremidi::{Client, Destination, Destinations, PacketBuffer};
+use std::sync::atomic::{AtomicBool, Ordering};
 
 struct Output {
     destination: Option<Destination>,
@@ -10,6 +11,7 @@ pub struct MidiBackend {
     _client: Option<Client>,
     port: Option<coremidi::OutputPort>,
     outputs: Vec<Output>,
+    send_error_reported: AtomicBool,
 }
 
 impl MidiBackend {
@@ -30,14 +32,30 @@ impl MidiBackend {
                 name,
             });
         }
-        let client = Client::new("MKS-7 CLAP Controller").ok();
-        let port = client
-            .as_ref()
-            .and_then(|client| client.output_port("MKS-7 CLAP Controller SysEx").ok());
+        let client = match Client::new("MKS-7 Controller") {
+            Ok(client) => Some(client),
+            Err(error) => {
+                eprintln!("MKS-7 Controller: failed to create CoreMIDI client: {error:?}");
+                None
+            }
+        };
+        let port =
+            client.as_ref().and_then(
+                |client| match client.output_port("MKS-7 Controller SysEx") {
+                    Ok(port) => Some(port),
+                    Err(error) => {
+                        eprintln!(
+                            "MKS-7 Controller: failed to create CoreMIDI output port: {error:?}"
+                        );
+                        None
+                    }
+                },
+            );
         Self {
             _client: client,
             port,
             outputs,
+            send_error_reported: AtomicBool::new(false),
         }
     }
 
@@ -66,14 +84,25 @@ impl MidiBackend {
         };
         #[cfg(debug_assertions)]
         eprintln!(
-            "MKS-7 CLAP Controller MIDI: {}",
+            "MKS-7 Controller MIDI: {}",
             bytes
                 .iter()
                 .map(|byte| format!("{byte:02X}"))
                 .collect::<Vec<_>>()
                 .join(" ")
         );
-        port.send(destination, &PacketBuffer::new(0, bytes)).is_ok()
+        match port.send(destination, &PacketBuffer::new(0, bytes)) {
+            Ok(()) => {
+                self.send_error_reported.store(false, Ordering::Relaxed);
+                true
+            }
+            Err(error) => {
+                if !self.send_error_reported.swap(true, Ordering::Relaxed) {
+                    eprintln!("MKS-7 Controller: CoreMIDI send failed: {error:?}");
+                }
+                false
+            }
+        }
     }
 }
 
@@ -87,9 +116,9 @@ mod tests {
     #[test]
     fn enumerates_unique_id_and_sends_to_coremidi_destination() {
         let (sender, receiver) = mpsc::channel();
-        let client = Client::new("MKS-7 CLAP Controller Test").unwrap();
+        let client = Client::new("MKS-7 Controller Test").unwrap();
         let destination = client
-            .virtual_destination("MKS-7 CLAP Controller Test Destination", move |packets| {
+            .virtual_destination("MKS-7 Controller Test Destination", move |packets| {
                 let bytes = packets
                     .iter()
                     .flat_map(|packet| packet.data().iter().copied())
@@ -101,7 +130,7 @@ mod tests {
 
         let backend = MidiBackend::new();
         let index = (0..backend.count())
-            .find(|index| backend.name(*index) == "MKS-7 CLAP Controller Test Destination")
+            .find(|index| backend.name(*index) == "MKS-7 Controller Test Destination")
             .expect("virtual CoreMIDI destination was not enumerated");
         assert_eq!(backend.unique_id(index), expected_id);
         let message = [0xf0, 0x41, 0x32, 0, 5, 96, 0xf7];
