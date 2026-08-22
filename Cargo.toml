@@ -1,0 +1,23 @@
+[workspace]
+resolver = "2"
+members = ["xtask"]
+
+[package]
+name = "mks7_clap_controller"
+version = "0.6.1"
+edition = "2024"
+publish = false
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+clack-plugin = { git = "https://github.com/prokopyl/clack.git", rev = "c5975f9f89f0953b00768680357985d46178078a", version = "0.2.0" }
+clack-extensions = { git = "https://github.com/prokopyl/clack.git", rev = "c5975f9f89f0953b00768680357985d46178078a", version = "0.2.0", features = ["clack-plugin", "note-ports", "params", "remote-controls", "state"] }
+
+[target.'cfg(target_os = "macos")'.dependencies]
+coremidi = "0.8.0"
+
+[dev-dependencies]
+clack-host = { git = "https://github.com/prokopyl/clack.git", rev = "c5975f9f89f0953b00768680357985d46178078a", version = "0.2.0", features = ["clack-plugin"] }
+clack-extensions = { git = "https://github.com/prokopyl/clack.git", rev = "c5975f9f89f0953b00768680357985d46178078a", version = "0.2.0", features = ["clack-host", "clack-plugin", "note-ports", "params", "remote-controls", "state"] }
