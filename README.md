@@ -1,4 +1,4 @@
-# MKS-7 CLAP Controller
+# Roland MKS-7 CLAP Controller
 
 [![CI](https://github.com/kovaacs/mks7_clap_controller/actions/workflows/ci.yml/badge.svg)](https://github.com/kovaacs/mks7_clap_controller/actions/workflows/ci.yml)
 [![Release](https://img.shields.io/github/v/release/kovaacs/mks7_clap_controller)](https://github.com/kovaacs/mks7_clap_controller/releases/latest)
