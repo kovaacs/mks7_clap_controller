@@ -4,9 +4,6 @@ An Apple Silicon macOS CLAP plug-in bundle for editing the Roland MKS-7 from com
 It exposes the MKS-7's synthesis parameters as automatable, modulatable controls and saves their
 state with the host project. Bitwig Studio is the currently documented and tested host.
 
-This is an independent, unofficial project and is not affiliated with or endorsed by Roland or
-Bitwig. Roland, MKS-7, Bitwig, and Bitwig Studio are trademarks of their respective owners.
-
 The bundle provides three note effects:
 
 - `MKS-7 Melody Controller`
@@ -100,6 +97,11 @@ events rather than interrupting real-time processing.
 
 See [`docs/MKS-7_DEVELOPER_REFERENCE.md`](docs/MKS-7_DEVELOPER_REFERENCE.md) for the implemented MIDI
 protocol and hardware-verified encodings.
+
+## Disclaimer
+
+This is an independent, unofficial project and is not affiliated with or endorsed by Roland or
+Bitwig. Roland, MKS-7, Bitwig, and Bitwig Studio are trademarks of their respective owners.
 
 ## License
 
