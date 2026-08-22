@@ -55,23 +55,27 @@ Download the Apple Silicon macOS archive and checksum from
 shasum -a 256 -c MKS-7-Controller-*-macOS-Apple-Silicon.zip.sha256
 ```
 
+The release bundle is ad-hoc signed on GitHub Actions, not Developer ID signed or notarized. Before
+installing it, fully quit Bitwig, extract the archive, clear the downloaded file attributes, replace
+the CI signature with a local ad-hoc signature, and verify the result:
+
+```sh
+xattr -cr "MKS-7 Controller.clap"
+codesign --force --deep --sign - "MKS-7 Controller.clap"
+codesign --verify --deep --strict --verbose=2 "MKS-7 Controller.clap"
+```
+
+Only clear the attributes and re-sign a bundle you built yourself or downloaded from a release you
+trust. If Bitwig previously rejected the bundle, keep Bitwig closed while running these commands so
+that restarting it clears the cached rejection.
+
 Place or symlink `MKS-7 Controller.clap` in:
 
 ```text
 ~/Library/Audio/Plug-Ins/CLAP/
 ```
 
-Then rescan plug-ins in Bitwig.
-
-The bundle is ad-hoc signed, not Developer ID signed or notarized. macOS may quarantine a downloaded
-copy. Verify the bundle before removing quarantine:
-
-```sh
-codesign --verify --deep --strict --verbose=2 "MKS-7 Controller.clap"
-xattr -d com.apple.quarantine "MKS-7 Controller.clap"
-```
-
-Only remove quarantine from a bundle you built yourself or downloaded from a release you trust.
+Then restart Bitwig and rescan plug-ins.
 
 ## Use In Bitwig
 
