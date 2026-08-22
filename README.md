@@ -1,4 +1,4 @@
-# MKS-7 Controller
+# MKS-7 CLAP Controller
 
 An Apple Silicon macOS CLAP plug-in bundle for editing the Roland MKS-7 from compatible CLAP hosts.
 It exposes the MKS-7's synthesis parameters as automatable, modulatable controls and saves their
