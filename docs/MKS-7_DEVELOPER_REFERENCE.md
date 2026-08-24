@@ -60,7 +60,21 @@ F0 41 32 00 05 60 F7
 | 16 | Oscillator switches |
 | 17 | Mode switches |
 
-Parameters other than 4, 16, and 17 use values `0..127`.
+Parameters other than 4, 15, 16, and 17 use values `0..127`.
+
+### Parameter 15
+
+The Sub Level is a four-step control implemented by a 2-bit D/A converter. The hardware uses only
+bits 5 and 6 of the received value:
+
+| Value | Sub Level |
+|---:|---:|
+| `0..31` | 0 (off) |
+| `32..63` | 1 |
+| `64..95` | 2 |
+| `96..127` | 3 |
+
+Send the canonical values `0`, `32`, `64`, and `96`.
 
 ### Parameter 4
 

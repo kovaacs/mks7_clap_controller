@@ -21,6 +21,9 @@ pub const ENV_POLARITY_PARAMETER_ID: u32 = 111;
 pub const HPF_PARAMETER_ID: u32 = 112;
 pub const NOISE_PARAMETER_ID: u32 = 113;
 pub const BASS_WAVEFORM_PARAMETER_ID: u32 = 114;
+pub const SUB_LEVEL_PARAMETER_ID: u32 = 14;
+
+const SUB_LEVEL_PROTOCOL_STEP: i32 = 32;
 
 const RELAXED: Ordering = Ordering::Relaxed;
 
@@ -67,6 +70,9 @@ impl Part {
     }
     pub const fn is_bass(self) -> bool {
         matches!(self, Self::Bass)
+    }
+    pub const fn has_sub_level(self) -> bool {
+        !self.is_bass()
     }
     pub const fn switch_control_count(self) -> usize {
         if self.supports_oscillator_switches() {
@@ -225,7 +231,11 @@ impl State {
     pub fn apply_value(&self, id: u32, value: f64, output_count: usize) {
         if (id as usize) < self.part.parameters().len() {
             let index = id as usize;
-            let value = value.round().clamp(0.0, 127.0);
+            let value = if id == SUB_LEVEL_PARAMETER_ID && self.part.has_sub_level() {
+                value.round().clamp(0.0, 3.0)
+            } else {
+                value.round().clamp(0.0, 127.0)
+            };
             if self.values[index].swap(value) != value {
                 self.dirty[index].store(true, RELAXED);
                 self.authoritative.store(true, RELAXED);
@@ -467,9 +477,17 @@ impl State {
             if !self.dirty[index].swap(false, RELAXED) {
                 continue;
             }
-            let effective = (self.values[index].load() + self.modulations[index].load())
+            let max = if index == SUB_LEVEL_PARAMETER_ID as usize && self.part.has_sub_level() {
+                3.0
+            } else {
+                127.0
+            };
+            let mut effective = (self.values[index].load() + self.modulations[index].load())
                 .round()
-                .clamp(0.0, 127.0) as i32;
+                .clamp(0.0, max) as i32;
+            if index == SUB_LEVEL_PARAMETER_ID as usize && self.part.has_sub_level() {
+                effective *= SUB_LEVEL_PROTOCOL_STEP;
+            }
             let bytes = parameter_change(
                 channel,
                 self.part.parameters()[index].protocol_number as i32,
@@ -577,6 +595,7 @@ impl State {
         if data.len() < serialized_size
             || !(1..=16).contains(&data[5])
             || data[6..6 + count].iter().any(|v| *v > 127)
+            || self.part.has_sub_level() && data[6 + SUB_LEVEL_PARAMETER_ID as usize] > 3
         {
             return Err(StateError);
         }
@@ -737,6 +756,29 @@ mod tests {
             [0xf0, 0x41, 0x32, 2, 5, 98, 0xf7]
         );
         assert!(state.take_next_message(&mut next).is_none());
+    }
+
+    #[test]
+    fn sub_level_uses_four_steps_and_canonical_protocol_values() {
+        let state = State::new(Part::Melody);
+        state.apply_value(SUB_LEVEL_PARAMETER_ID, 1.0, 1);
+        assert_eq!(state.get_value(SUB_LEVEL_PARAMETER_ID), Some(1.0));
+
+        let mut next = 0;
+        assert_eq!(
+            state.take_next_message(&mut next).unwrap().bytes,
+            [0xf0, 0x41, 0x32, 0, 15, 32, 0xf7]
+        );
+
+        state.apply_modulation(SUB_LEVEL_PARAMETER_ID, 2.0);
+        assert_eq!(
+            state.take_next_message(&mut next).unwrap().bytes,
+            [0xf0, 0x41, 0x32, 0, 15, 96, 0xf7]
+        );
+
+        let mut invalid = state.save(0);
+        invalid[6 + SUB_LEVEL_PARAMETER_ID as usize] = 32;
+        assert_eq!(state.load(&invalid, &[0]), Err(StateError));
     }
 
     #[test]

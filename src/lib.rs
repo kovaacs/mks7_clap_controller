@@ -214,7 +214,11 @@ impl PluginMainThreadParams for Mks7MainThread<'_> {
                 name: definition.name,
                 module: definition.module,
                 min_value: 0.0,
-                max_value: 127.0,
+                max_value: if definition.id == SUB_LEVEL_PARAMETER_ID && part.has_sub_level() {
+                    3.0
+                } else {
+                    127.0
+                },
                 default_value: 0.0,
             });
             return;
