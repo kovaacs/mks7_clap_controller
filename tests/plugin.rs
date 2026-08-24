@@ -107,7 +107,7 @@ fn descriptors_parameters_ports_and_remote_pages_are_stable() {
                     parameter.max_value,
                     parameter.default_value
                 ),
-                (0.0, 127.0, 0.0)
+                (0.0, if parameter.id == 14 { 3.0 } else { 127.0 }, 0.0)
             );
             assert_eq!(
                 parameter.flags,
