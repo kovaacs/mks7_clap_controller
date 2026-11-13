@@ -36,6 +36,18 @@ cargo test --workspace --all-targets --locked
 cargo audit
 ```
 
+## Previewing the Panel
+
+The editor can be rendered without a host. This writes `melody.rgba`, `chord.rgba`, and `bass.rgba`
+(a `width height` text line followed by RGBA8 rows) into the given directory:
+
+```sh
+MKS7_RENDER_DIR=/tmp/mks7-preview cargo test --lib render_previews -- --ignored
+```
+
+Opening the real window, automation recording, and keyboard pass-through still need a manual check
+in Bitwig.
+
 ## Making Changes
 
 - Create a focused branch from the latest `main`.

@@ -4,7 +4,7 @@ use crate::protocol::{
     parameter_change,
 };
 use std::array;
-use std::sync::atomic::{AtomicBool, AtomicI32, AtomicU64, AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicI32, AtomicU8, AtomicU64, AtomicUsize, Ordering};
 
 pub const CHANNEL_PARAMETER_ID: u32 = 100;
 pub const MIDI_OUTPUT_PARAMETER_ID: u32 = 101;
@@ -22,6 +22,8 @@ pub const HPF_PARAMETER_ID: u32 = 112;
 pub const NOISE_PARAMETER_ID: u32 = 113;
 pub const BASS_WAVEFORM_PARAMETER_ID: u32 = 114;
 pub const SUB_LEVEL_PARAMETER_ID: u32 = 14;
+/// Continuous parameters use ids `0..CONTINUOUS_PARAMETER_COUNT`; the largest part has this many.
+pub const CONTINUOUS_PARAMETER_COUNT: usize = 15;
 
 const SUB_LEVEL_PROTOCOL_STEP: i32 = 32;
 
@@ -106,11 +108,14 @@ impl AtomicF64 {
     }
 }
 
+pub const UI_ZOOM_STEPS: usize = 4;
+pub const DEFAULT_UI_ZOOM: u8 = 1;
+
 pub struct State {
     pub part: Part,
-    values: [AtomicF64; 15],
-    modulations: [AtomicF64; 15],
-    dirty: [AtomicBool; 15],
+    values: [AtomicF64; CONTINUOUS_PARAMETER_COUNT],
+    modulations: [AtomicF64; CONTINUOUS_PARAMETER_COUNT],
+    dirty: [AtomicBool; CONTINUOUS_PARAMETER_COUNT],
     channel: AtomicI32,
     output_index: AtomicUsize,
     whole_mode: AtomicBool,
@@ -136,6 +141,7 @@ pub struct State {
     has_bass_waveform: AtomicBool,
     bass_waveform_dirty: AtomicBool,
     authoritative: AtomicBool,
+    ui_zoom: AtomicU8,
 }
 
 impl State {
@@ -170,6 +176,7 @@ impl State {
             has_bass_waveform: AtomicBool::new(false),
             bass_waveform_dirty: AtomicBool::new(false),
             authoritative: AtomicBool::new(false),
+            ui_zoom: AtomicU8::new(DEFAULT_UI_ZOOM),
         }
     }
 
@@ -178,6 +185,23 @@ impl State {
     }
     pub fn has_authoritative_state(&self) -> bool {
         self.authoritative.load(RELAXED)
+    }
+
+    pub fn ui_zoom(&self) -> u8 {
+        self.ui_zoom.load(RELAXED)
+    }
+
+    pub fn set_ui_zoom(&self, index: u8) {
+        self.ui_zoom
+            .store(index.min(UI_ZOOM_STEPS as u8 - 1), RELAXED);
+    }
+
+    pub fn modulation(&self, id: u32) -> f64 {
+        if (id as usize) < self.part.parameters().len() {
+            self.modulations[id as usize].load()
+        } else {
+            0.0
+        }
     }
 
     pub fn get_value(&self, id: u32) -> Option<f64> {
@@ -525,8 +549,11 @@ impl State {
         } else {
             switch_offset + 2
         };
-        let mut out = vec![0; size];
+        // Version 5 followed by one optional byte, the editor zoom step. Loaders that
+        // predate the editor read exactly the version 5 size and ignore it.
+        let mut out = vec![0; size + 1];
         out[..5].copy_from_slice(b"MKS7\x05");
+        out[size] = self.ui_zoom.load(RELAXED);
         out[5] = self.channel.load(RELAXED) as u8;
         for index in 0..count {
             out[6 + index] = self.values[index].load().round().clamp(0.0, 127.0) as u8;
@@ -612,7 +639,7 @@ impl State {
         {
             return Err(StateError);
         }
-        if version == 5 {
+        if version >= 5 {
             if self.part.supports_oscillator_switches() {
                 if data[secondary_offset..secondary_offset + 9]
                     .iter()
@@ -627,7 +654,6 @@ impl State {
                 return Err(StateError);
             }
         }
-
         self.channel.store(data[5] as i32, RELAXED);
         for index in 0..count {
             self.values[index].store(data[6 + index] as f64);
@@ -662,7 +688,7 @@ impl State {
             self.saw.store(false, RELAXED);
             self.chorus.store(false, RELAXED);
         }
-        if self.part.supports_oscillator_switches() && version == 5 {
+        if self.part.supports_oscillator_switches() && version >= 5 {
             self.has_dynamics
                 .store(data[secondary_offset] != 0, RELAXED);
             self.vcf_dynamics
@@ -693,7 +719,7 @@ impl State {
             self.hpf.store(false, RELAXED);
             self.noise.store(false, RELAXED);
         }
-        if self.part.is_bass() && version == 5 {
+        if self.part.is_bass() && version >= 5 {
             self.has_bass_waveform
                 .store(data[switch_offset] != 0, RELAXED);
             self.bass_saw.store(data[switch_offset + 1] != 0, RELAXED);
@@ -701,6 +727,12 @@ impl State {
             self.has_bass_waveform.store(false, RELAXED);
             self.bass_saw.store(false, RELAXED);
         }
+        // The optional zoom byte after a version 5 state; anything unusable means 100 %.
+        let zoom = match data.get(serialized_size) {
+            Some(&zoom) if version == 5 && (zoom as usize) < UI_ZOOM_STEPS => zoom,
+            _ => DEFAULT_UI_ZOOM,
+        };
+        self.ui_zoom.store(zoom, RELAXED);
         self.oscillator_dirty.store(false, RELAXED);
         self.dynamics_dirty.store(false, RELAXED);
         self.secondary_dirty.store(false, RELAXED);
@@ -795,8 +827,9 @@ mod tests {
     }
 
     #[test]
-    fn state_v1_through_v5_load_and_v5_round_trip() {
+    fn state_v1_through_v5_load_and_v5_round_trip_with_zoom() {
         let state = State::new(Part::Melody);
+        state.set_ui_zoom(3);
         for version in 1..=5 {
             let mut bytes = match version {
                 1 => vec![0; 21],
@@ -815,12 +848,104 @@ mod tests {
             state.load(&bytes, &[0]).unwrap();
             assert_eq!(state.get_value(CHANNEL_PARAMETER_ID), Some(7.0));
             assert_eq!(state.get_value(4), Some(24.0));
+            assert_eq!(state.ui_zoom(), DEFAULT_UI_ZOOM);
+            state.set_ui_zoom(3);
         }
         let saved = state.save(-1234);
+        assert_eq!(saved[4], 5);
+        assert_eq!(saved.len(), 40);
         let restored = State::new(Part::Melody);
         restored.load(&saved, &[0, -1234]).unwrap();
         assert_eq!(restored.output_index(), 1);
         assert_eq!(restored.save(-1234), saved);
+    }
+
+    #[test]
+    fn zoom_byte_round_trips_for_all_parts() {
+        for part in [Part::Melody, Part::Chord, Part::Bass] {
+            let state = State::new(part);
+            state.set_ui_zoom(2);
+            let saved = state.save(0);
+            assert_eq!(*saved.last().unwrap(), 2);
+            let restored = State::new(part);
+            restored.load(&saved, &[0]).unwrap();
+            assert_eq!(restored.ui_zoom(), 2);
+        }
+    }
+
+    #[test]
+    fn zoom_byte_is_optional_and_an_invalid_one_falls_back_to_100_percent() {
+        let source = State::new(Part::Melody);
+        source.apply_value(4, 99.0, 1);
+        source.set_ui_zoom(3);
+        let mut saved = source.save(0);
+
+        let state = State::new(Part::Melody);
+        *saved.last_mut().unwrap() = 4;
+        state.load(&saved, &[0]).unwrap();
+        assert_eq!(state.ui_zoom(), DEFAULT_UI_ZOOM);
+        assert_eq!(state.get_value(4), Some(99.0));
+
+        // What a loader from before the editor reads: exactly the version 5 size.
+        saved.pop();
+        state.set_ui_zoom(3);
+        state.load(&saved, &[0]).unwrap();
+        assert_eq!(state.ui_zoom(), DEFAULT_UI_ZOOM);
+        assert_eq!(state.get_value(4), Some(99.0));
+        assert_eq!(state.serialized_size(5), Some(saved.len()));
+        assert_eq!(state.serialized_size(6), None);
+    }
+
+    #[test]
+    fn v5_loads_secondary_switches_with_and_without_zoom() {
+        let state = State::new(Part::Melody);
+        let mut v5 = vec![0; 39];
+        v5[..5].copy_from_slice(b"MKS7\x05");
+        v5[5] = 1;
+        // switch_offset = 25, secondary_offset = 30; has_secondary = +3, hpf = +7.
+        v5[33] = 1;
+        v5[37] = 1;
+        state.load(&v5, &[0]).unwrap();
+        assert_eq!(state.get_value(HPF_PARAMETER_ID), Some(1.0));
+        assert!(state.has_secondary.load(RELAXED));
+
+        let source = State::new(Part::Melody);
+        source.has_secondary.store(true, RELAXED);
+        source.hpf.store(true, RELAXED);
+        let saved = source.save(0);
+        assert_eq!(saved[4], 5);
+        let restored = State::new(Part::Melody);
+        restored.load(&saved, &[0]).unwrap();
+        assert_eq!(restored.get_value(HPF_PARAMETER_ID), Some(1.0));
+        assert!(restored.has_secondary.load(RELAXED));
+
+        let bass = State::new(Part::Bass);
+        bass.has_bass_waveform.store(true, RELAXED);
+        bass.bass_saw.store(true, RELAXED);
+        let restored = State::new(Part::Bass);
+        restored.load(&bass.save(0), &[0]).unwrap();
+        assert_eq!(restored.get_value(BASS_WAVEFORM_PARAMETER_ID), Some(1.0));
+        assert!(restored.has_bass_waveform.load(RELAXED));
+    }
+
+    #[test]
+    fn set_ui_zoom_is_not_a_parameter_change() {
+        let state = State::new(Part::Melody);
+        state.set_ui_zoom(0);
+        assert_eq!(state.ui_zoom(), 0);
+        state.set_ui_zoom(9);
+        assert_eq!(state.ui_zoom(), 3);
+        assert!(!state.has_dirty());
+        assert!(!state.has_authoritative_state());
+    }
+
+    #[test]
+    fn modulation_returns_applied_amount() {
+        let state = State::new(Part::Melody);
+        assert_eq!(state.modulation(4), 0.0);
+        state.apply_modulation(4, 2.5);
+        assert_eq!(state.modulation(4), 2.5);
+        assert_eq!(state.modulation(CHANNEL_PARAMETER_ID), 0.0);
     }
 
     #[test]
