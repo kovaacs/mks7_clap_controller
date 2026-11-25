@@ -1,3 +1,5 @@
+mod editor;
+mod edits;
 mod midi;
 mod model;
 mod protocol;
@@ -15,6 +17,9 @@ use clack_extensions::remote_controls::{
 };
 use clack_extensions::state::{PluginState, PluginStateImpl};
 use clack_plugin::entry::prelude::*;
+use clack_plugin::events::event_types::{
+    ParamGestureBeginEvent, ParamGestureEndEvent, ParamValueEvent,
+};
 use clack_plugin::events::spaces::CoreEventSpace;
 use clack_plugin::prelude::*;
 use clack_plugin::stream::{InputStream, OutputStream};
@@ -40,12 +45,14 @@ impl Plugin for Mks7Plugin {
             .register::<PluginParams>()
             .register::<PluginState>()
             .register::<PluginNotePorts>()
-            .register::<PluginRemoteControls>();
+            .register::<PluginRemoteControls>()
+            .register::<clack_extensions::gui::PluginGui>();
     }
 }
 
 pub struct Mks7Shared {
     state: Arc<State>,
+    edits: Arc<edits::EditQueue>,
     midi: Arc<MidiBackend>,
     running: Arc<AtomicBool>,
     sender: Mutex<Option<JoinHandle<()>>>,
@@ -81,6 +88,7 @@ impl Mks7Shared {
         });
         Self {
             state,
+            edits: Arc::new(edits::EditQueue::new()),
             midi,
             running,
             sender: Mutex::new(Some(sender)),
@@ -103,6 +111,8 @@ pub struct Mks7MainThread<'a> {
     shared: &'a Mks7Shared,
     host: HostMainThreadHandle<'a>,
     host_params: Option<HostParams>,
+    host_gui: Option<clack_extensions::gui::HostGui>,
+    editor: std::cell::RefCell<Option<editor::Editor>>,
 }
 
 impl<'a> PluginMainThread<'a, Mks7Shared> for Mks7MainThread<'a> {}
@@ -130,6 +140,7 @@ impl<'a> PluginAudioProcessor<'a, Mks7Shared, Mks7MainThread<'a>> for Mks7AudioP
         _audio: Audio,
         events: Events,
     ) -> Result<ProcessStatus, PluginError> {
+        push_edits(&self.shared.edits, events.output);
         for event in events.input {
             match event.as_core_event() {
                 Some(CoreEventSpace::ParamValue(value)) => {
@@ -158,7 +169,12 @@ impl<'a> PluginAudioProcessor<'a, Mks7Shared, Mks7MainThread<'a>> for Mks7AudioP
                 _ => {}
             }
         }
-        Ok(ProcessStatus::Sleep)
+        // Edits the host buffer had no room for are retried on the next block.
+        Ok(if self.shared.edits.has_pending() {
+            ProcessStatus::Continue
+        } else {
+            ProcessStatus::Sleep
+        })
     }
 
     fn reset(&mut self) {
@@ -166,6 +182,25 @@ impl<'a> PluginAudioProcessor<'a, Mks7Shared, Mks7MainThread<'a>> for Mks7AudioP
             self.shared.state.mark_all_dirty();
         }
     }
+}
+
+fn push_edits(queue: &edits::EditQueue, output: &mut OutputEvents) {
+    queue.drain(|edit| match edit {
+        edits::Edit::Begin(id) => output
+            .try_push(ParamGestureBeginEvent::new(0, ClapId::new(id)))
+            .is_ok(),
+        edits::Edit::Value(id, value) => output
+            .try_push(ParamValueEvent::new(
+                0,
+                ClapId::new(id),
+                Pckn::match_all(),
+                value,
+            ))
+            .is_ok(),
+        edits::Edit::End(id) => output
+            .try_push(ParamGestureEndEvent::new(0, ClapId::new(id)))
+            .is_ok(),
+    });
 }
 
 fn flush_events(shared: &Mks7Shared, input: &InputEvents) {
@@ -189,9 +224,54 @@ fn flush_events(shared: &Mks7Shared, input: &InputEvents) {
 }
 
 impl PluginAudioProcessorParams for Mks7AudioProcessor<'_> {
-    fn flush(&mut self, input: &InputEvents, _output: &mut OutputEvents) {
+    fn flush(&mut self, input: &InputEvents, output: &mut OutputEvents) {
+        push_edits(&self.shared.edits, output);
         flush_events(self.shared, input);
     }
+}
+
+/// The text shown for a parameter value, by the host and by the editor's readout.
+fn display_text(
+    part: Part,
+    midi: &MidiBackend,
+    id: u32,
+    value: f64,
+) -> Option<std::borrow::Cow<'_, str>> {
+    let text = if id == MIDI_OUTPUT_PARAMETER_ID {
+        let index =
+            (value.round() as isize).clamp(0, midi.count().saturating_sub(1) as isize) as usize;
+        midi.name(index)
+    } else if id == WHOLE_MODE_PARAMETER_ID && part.supports_whole_mode() {
+        if value >= 0.5 { "6 Voices" } else { "4 Voices" }
+    } else if id == RANGE_PARAMETER_ID && part.supports_oscillator_switches() {
+        ["16'", "8'", "4'"][(value.round() as i32).clamp(0, 2) as usize]
+    } else if part.supports_oscillator_switches()
+        && matches!(
+            id,
+            PULSE_PARAMETER_ID
+                | SAW_PARAMETER_ID
+                | CHORUS_PARAMETER_ID
+                | VCF_DYNAMICS_PARAMETER_ID
+                | VCA_DYNAMICS_PARAMETER_ID
+                | HPF_PARAMETER_ID
+        )
+        || id == NOISE_PARAMETER_ID && part.is_melody()
+    {
+        if value >= 0.5 { "On" } else { "Off" }
+    } else if id == PWM_SOURCE_PARAMETER_ID && part.supports_oscillator_switches() {
+        if value >= 0.5 { "Manual" } else { "LFO" }
+    } else if id == VCA_MODE_PARAMETER_ID && part.supports_oscillator_switches() {
+        if value >= 0.5 { "Gate" } else { "ENV" }
+    } else if id == ENV_POLARITY_PARAMETER_ID && part.supports_oscillator_switches() {
+        if value >= 0.5 { "Negative" } else { "Positive" }
+    } else if id == BASS_WAVEFORM_PARAMETER_ID && part.is_bass() {
+        if value >= 0.5 { "Saw" } else { "Pulse" }
+    } else if (id as usize) < part.parameters().len() || id == CHANNEL_PARAMETER_ID {
+        return Some((value.round() as i64).to_string().into());
+    } else {
+        return None;
+    };
+    Some(text.into())
 }
 
 impl PluginMainThreadParams for Mks7MainThread<'_> {
@@ -339,44 +419,9 @@ impl PluginMainThreadParams for Mks7MainThread<'_> {
         value: f64,
         writer: &mut ParamDisplayWriter,
     ) -> std::fmt::Result {
-        let id = id.get();
-        let part = self.shared.state.part;
-        let text = if id == MIDI_OUTPUT_PARAMETER_ID {
-            let index = (value.round() as isize)
-                .clamp(0, self.shared.midi.count().saturating_sub(1) as isize)
-                as usize;
-            self.shared.midi.name(index)
-        } else if id == WHOLE_MODE_PARAMETER_ID && part.supports_whole_mode() {
-            if value >= 0.5 { "6 Voices" } else { "4 Voices" }
-        } else if id == RANGE_PARAMETER_ID && part.supports_oscillator_switches() {
-            ["16'", "8'", "4'"][(value.round() as i32).clamp(0, 2) as usize]
-        } else if part.supports_oscillator_switches()
-            && matches!(
-                id,
-                PULSE_PARAMETER_ID
-                    | SAW_PARAMETER_ID
-                    | CHORUS_PARAMETER_ID
-                    | VCF_DYNAMICS_PARAMETER_ID
-                    | VCA_DYNAMICS_PARAMETER_ID
-                    | HPF_PARAMETER_ID
-            )
-            || id == NOISE_PARAMETER_ID && part.is_melody()
-        {
-            if value >= 0.5 { "On" } else { "Off" }
-        } else if id == PWM_SOURCE_PARAMETER_ID && part.supports_oscillator_switches() {
-            if value >= 0.5 { "Manual" } else { "LFO" }
-        } else if id == VCA_MODE_PARAMETER_ID && part.supports_oscillator_switches() {
-            if value >= 0.5 { "Gate" } else { "ENV" }
-        } else if id == ENV_POLARITY_PARAMETER_ID && part.supports_oscillator_switches() {
-            if value >= 0.5 { "Negative" } else { "Positive" }
-        } else if id == BASS_WAVEFORM_PARAMETER_ID && part.is_bass() {
-            if value >= 0.5 { "Saw" } else { "Pulse" }
-        } else if (id as usize) < part.parameters().len() || id == CHANNEL_PARAMETER_ID {
-            return write!(writer, "{}", value.round() as i64);
-        } else {
-            return Err(std::fmt::Error);
-        };
-        writer.write_str(text)
+        let text = display_text(self.shared.state.part, &self.shared.midi, id.get(), value)
+            .ok_or(std::fmt::Error)?;
+        writer.write_str(&text)
     }
 
     fn text_to_value(&self, id: ClapId, text: &CStr) -> Option<f64> {
@@ -472,7 +517,8 @@ impl PluginMainThreadParams for Mks7MainThread<'_> {
         (parsed >= min && parsed <= max).then(|| parsed.round())
     }
 
-    fn flush(&self, input: &InputEvents, _output: &mut OutputEvents) {
+    fn flush(&self, input: &InputEvents, output: &mut OutputEvents) {
+        push_edits(&self.shared.edits, output);
         flush_events(self.shared, input);
     }
 }
@@ -497,10 +543,17 @@ impl PluginStateImpl for Mks7MainThread<'_> {
         let mut data = vec![0; size];
         data[..5].copy_from_slice(&header);
         input.read_exact(&mut data[5..])?;
+        // Version 5 may be followed by the optional editor zoom byte.
+        let mut zoom = [0];
+        if header[4] == 5 && matches!(input.read(&mut zoom), Ok(1)) {
+            data.push(zoom[0]);
+        }
         self.shared
             .state
             .load(&data, &self.shared.midi.unique_ids())
             .map_err(|_| PluginError::Message("Invalid MKS-7 Controller state"))?;
+        // Edits the editor queued for the old values must not reach the host now.
+        self.shared.edits.clear_values();
         if let Some(params) = &self.host_params {
             params.rescan(&self.host, ParamRescanFlags::VALUES);
         }
@@ -657,6 +710,8 @@ impl PluginFactoryImpl for Mks7Factory {
                 Ok(Mks7MainThread {
                     shared,
                     host_params: host.get_extension::<HostParams>(),
+                    host_gui: host.get_extension::<clack_extensions::gui::HostGui>(),
+                    editor: None.into(),
                     host,
                 })
             },
@@ -680,3 +735,37 @@ impl Entry for Mks7Entry {
 }
 
 clack_plugin::clack_export_entry!(Mks7Entry);
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use clack_plugin::events::io::EventBuffer;
+
+    #[test]
+    fn bare_value_becomes_gesture_value_gesture() {
+        let queue = edits::EditQueue::new();
+        queue.set_value(3, 64.0);
+        let mut buffer = EventBuffer::new();
+        push_edits(&queue, &mut OutputEvents::from_buffer(&mut buffer));
+        let kinds: Vec<_> = buffer
+            .iter()
+            .map(|event| {
+                // clack's CoreEventSpace does not decode gesture events, so match them by type.
+                if let Some(e) = event.as_event::<ParamGestureBeginEvent>() {
+                    ("begin", e.param_id(), 0.0)
+                } else if let Some(e) = event.as_event::<ParamValueEvent>() {
+                    ("value", e.param_id(), e.value())
+                } else if let Some(e) = event.as_event::<ParamGestureEndEvent>() {
+                    ("end", e.param_id(), 0.0)
+                } else {
+                    ("other", None, 0.0)
+                }
+            })
+            .collect();
+        let id = Some(ClapId::new(3));
+        assert_eq!(
+            kinds,
+            vec![("begin", id, 0.0), ("value", id, 64.0), ("end", id, 0.0)]
+        );
+    }
+}

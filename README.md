@@ -19,6 +19,8 @@ instruments: use Bitwig's HW Instrument after each controller for notes and audi
 
 ## Features
 
+- Custom front panel with faders, switches, and LED buttons for each part, plus MIDI channel and
+  output selection, a value readout, and 75/100/125/150% zoom
 - Melody, Chord, and Bass synthesis controls, including the hardware-verified packed switches
 - Chord four-voice/six-voice Whole Mode
 - Configurable MIDI output and receive channel for each part
@@ -26,9 +28,11 @@ instruments: use Bitwig's HW Instrument after each controller for notes and audi
 - Rate-limited and coalesced MIDI output
 - Best-effort note and MIDI event pass-through to the following device
 
-There is no custom interface; Bitwig's parameter and remote-control panels are the front panel.
-Rhythm mapping, program changes, hardware state reading, bulk tone writes, preset management, and
-MIDI destination hot-plug refresh are not implemented.
+Open the plug-in window in Bitwig to use the front panel; Bitwig's parameter and remote-control
+panels keep working alongside it. Drag a fader to change a value, hold Shift for fine adjustment, or
+scroll over it for single steps. The panel is drawn in code with a system font and bundles no
+images. Rhythm mapping, program changes, hardware state reading, bulk tone writes, preset
+management, and MIDI destination hot-plug refresh are not implemented.
 
 ## Build
 

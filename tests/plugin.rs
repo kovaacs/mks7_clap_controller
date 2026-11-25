@@ -1,3 +1,4 @@
+use clack_extensions::gui::{GuiApiType, GuiConfiguration, GuiSize, PluginGui};
 use clack_extensions::note_ports::{NoteDialects, NotePortInfoBuffer, PluginNotePorts};
 use clack_extensions::params::{ParamInfoBuffer, ParamInfoFlags, PluginParams};
 use clack_extensions::remote_controls::{PluginRemoteControls, RemoteControlsPageBuffer};
@@ -233,13 +234,41 @@ fn descriptors_parameters_ports_and_remote_pages_are_stable() {
         assert_eq!(
             saved.len(),
             if index == 2 {
-                22
+                23
             } else if index == 1 {
-                40
+                41
             } else {
-                39
+                40
             }
         );
+
+        // The editor: embedded Cocoa only, fixed size. `set_parent` needs a real view and the
+        // main thread, so the window itself is not opened here.
+        let gui = handle.get_extension::<PluginGui>().unwrap();
+        let embedded = GuiConfiguration {
+            api_type: GuiApiType::COCOA,
+            is_floating: false,
+        };
+        let floating = GuiConfiguration {
+            api_type: GuiApiType::COCOA,
+            is_floating: true,
+        };
+        assert!(gui.is_api_supported(&handle, embedded));
+        assert!(!gui.is_api_supported(&handle, floating));
+        assert_eq!(gui.get_preferred_api(&handle), Some(embedded));
+        assert!(gui.create(&handle, floating).is_err());
+        gui.create(&handle, embedded).unwrap();
+        let size = gui.get_size(&handle).unwrap();
+        assert_eq!(
+            size,
+            GuiSize {
+                width: [1136, 1104, 712][index],
+                height: 312
+            }
+        );
+        assert!(!gui.can_resize(&handle));
+        gui.set_size(&handle, size).unwrap();
+        gui.destroy(&handle);
 
         let remotes = handle.get_extension::<PluginRemoteControls>().unwrap();
         assert_eq!(remotes.count(&handle), page_count);
